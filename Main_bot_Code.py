@@ -8,8 +8,8 @@ from datetime import datetime
 import discord.ext.commands
 from dotenv import load_dotenv
 import os
-
 load_dotenv()
+
 
 
 #Global variables
@@ -42,6 +42,11 @@ ytdl_format_options = {
     'default_search': 'auto',
     'source_address': '0.0.0.0',
     'socket_timeout': 30,
+    'postprocessors': [{
+        'key': 'FFmpegExtractAudio',
+        'preferredcodec': 'mp3',
+        'preferredquality': '192',
+    }],
     'extractor_args': {
         'youtube': {
             'skip': ['dash', 'hls'],

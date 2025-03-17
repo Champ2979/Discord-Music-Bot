@@ -5,22 +5,30 @@ import asyncio
 from itertools import cycle
 from collections import deque
 from datetime import datetime
+import discord.ext.commands
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
 
 #Global variables
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 intents.voice_states = True
+
 autoplay_enabled = False
 current_song_start = None
 current_song_duration = None
 
 bot = commands.Bot(command_prefix="+", intents=intents)
-Status = cycle(['Welcome to The Blue Bird', 'Share our server link with your friends', 'Have a great time here'])
+Status = cycle(['Hi there,this is the music bot The Blue Bird', 'Do Listening music for free', 'Have a great time here'])
 
 queue = deque()
 current_song = None
 
+# YouTube downloader options
 ytdl_format_options = {
     'format': 'bestaudio/best',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
@@ -147,6 +155,23 @@ async def leave(ctx):
         await ctx.send("Left the voice channel.")
     else:
         await ctx.send("I'm not connected to any voice channel.")
+@bot.command()
+async def stop(ctx):
+    """Pauses the current audio playback."""
+    if ctx.voice_client and ctx.voice_client.is_playing():
+        ctx.voice_client.pause()
+        await ctx.send("⏸️ Playback paused. Use `+resume` to continue.")
+    else:
+        await ctx.send("❌ No audio is currently playing.")
+
+@bot.command()
+async def resume(ctx):
+    """Resumes the paused audio playback."""
+    if ctx.voice_client and ctx.voice_client.is_paused():
+        ctx.voice_client.resume()
+        await ctx.send("▶️ Playback resumed.")
+    else:
+        await ctx.send("❌ No audio is currently paused.")
 
 @bot.command()
 async def play(ctx, *, search: str):
@@ -239,5 +264,6 @@ async def current(ctx):
     
     await ctx.send(embed=embed)
 
-# Replace 'YOUR_BOT_TOKEN' with your actual bot token
-bot.run('MTAxMzcxNTAyOTk4OTc5Mzg2Mg.GZrKdz.hRRNMgvcrLNR2TWECZVaCyd76cV2-SwLOoJbV0')
+# Run the bot using the token from the .env file
+bot.run(os.getenv('DISCORD_BOT_TOKEN'))
+

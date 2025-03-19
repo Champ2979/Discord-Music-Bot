@@ -10,8 +10,6 @@ from dotenv import load_dotenv
 import os
 load_dotenv()
 
-
-
 #Global variables
 intents = discord.Intents.default()
 intents.message_content = True

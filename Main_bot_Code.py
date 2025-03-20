@@ -15,16 +15,16 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 intents.voice_states = True
-
-autoplay_enabled = False
 current_song_start = None
 current_song_duration = None
 
-bot = commands.Bot(command_prefix="+", intents=intents)
-Status = cycle(['Hi there,this is the music bot The Blue Bird', 'Do Listening music for free', 'Have a great time here'])
-
+current_volume = 0.5 
 queue = deque()
 current_song = None
+autoplay_enabled = False
+
+bot = commands.Bot(command_prefix="+", intents=intents)
+Status = cycle(['Hi there,this is the music bot The Blue Bird', 'Do Listening music for free', 'Have a great time here'])
 
 # YouTube downloader options
 ytdl_format_options = {
@@ -77,17 +77,20 @@ async def change_status():
     await bot.change_presence(activity=discord.Game(next(Status)))
 
 async def play_next(ctx):
-    global current_song, autoplay_enabled, current_song_start, current_song_duration
+    global current_song, autoplay_enabled, current_song_start, current_song_duration, current_volume
     
-    # If there are songs in the queue, play the next one
     if queue:
         current_song = queue.popleft()
         current_song_start = datetime.now()
         current_song_duration = current_song.get('duration')
         
-        # Play the song
+        # Create audio source with volume control
+        source = discord.FFmpegPCMAudio(current_song['url'], **ffmpeg_options)
+        audio_source = discord.PCMVolumeTransformer(source, volume=current_volume)  # Wrap with volume control
+        
+        # Play the audio
         ctx.voice_client.play(
-            discord.FFmpegPCMAudio(current_song['url'], **ffmpeg_options),
+            audio_source,
             after=lambda e: asyncio.run_coroutine_threadsafe(play_next(ctx), bot.loop)
         )
         
@@ -143,6 +146,55 @@ async def play_next(ctx):
         if ctx.voice_client:
             await ctx.voice_client.disconnect()
             await ctx.send("Queue empty, leaving voice channel.")
+
+# List of commands of the Bot
+@bot.command(aliases=['commands', 'helpme'])
+async def commands_list(ctx):
+    """Sends a list of all available bot commands."""
+    
+    commands_info = {
+        "+play <song/URL>": "Plays a song or adds it to the queue.",
+        "+pause": "Pauses the currently playing song.",
+        "+resume": "Resumes the paused song.",
+        "+skip": "Skips to the next song in the queue.",
+        "+stop": "Stops the music and leaves the channel.",
+        "+queue_list": "Shows the list of queued songs.",
+        "+current / +np": "Displays the currently playing song.",
+        "+clear": "Clears the song queue.",
+        "+join": "Joins the voice channel.",
+        "+leave": "Disconnects from the voice channel.",
+        "+autoplay": "Toggles autoplay mode.",
+        "+volume <0-100>": "Adjusts the volume.",
+    }
+
+    embed = discord.Embed(title="🎵 The Blue Bird - Commands List 🎵", 
+                          description="Here are the commands you can use:", 
+                          color=discord.Color.blue())
+
+    for command, description in commands_info.items():
+        embed.add_field(name=command, value=description, inline=False)
+
+    await ctx.send(embed=embed)
+
+
+@bot.command()
+async def volume(ctx, level: int):
+    """Adjust volume (0-100)"""
+    global current_volume  # Required to modify the global variable
+    
+    if not 0 <= level <= 100:
+        return await ctx.send("❌ Volume must be between 0 and 100!")
+    
+    current_volume = level / 100  # Convert to 0.0-1.0 scale
+    
+    # Update volume for currently playing audio
+    if ctx.voice_client and ctx.voice_client.is_playing():
+        if isinstance(ctx.voice_client.source, discord.PCMVolumeTransformer):
+            ctx.voice_client.source.volume = current_volume
+    
+    await ctx.send(f"🔊 Volume set to **{level}%**")
+
+
 @bot.command()
 async def join(ctx):
     if ctx.author.voice is None:
@@ -266,6 +318,8 @@ async def current(ctx):
     embed.add_field(name="Remaining", value=remaining_str)
     
     await ctx.send(embed=embed)
+
+
 
 # Run the bot using the token from the .env file
 bot.run(os.getenv('DISCORD_BOT_TOKEN'))

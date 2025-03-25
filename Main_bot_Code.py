@@ -28,17 +28,18 @@ Status = cycle(['Hi there,this is the music bot The Blue Bird', 'Do Listening mu
 
 # YouTube downloader options
 ytdl_format_options = {
-    'format': 'bestaudio/best',
+    'format': 'bestaudio/best[ext=webm]/bestaudio',
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
     'noplaylist': False,
     'nocheckcertificate': True,
-    'ignoreerrors': False,
+    'ignoreerrors': False, 
     'logtostderr': False,
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
+    # 'format_sort': ['res:720', 'ext:mp3:m4a'],  # Prioritize MP3/M4A formats. Some issue occured regarding the format
     'socket_timeout': 30,
     'postprocessors': [{
         'key': 'FFmpegExtractAudio',
@@ -154,10 +155,10 @@ async def commands_list(ctx):
     
     commands_info = {
         "+play <song/URL>": "Plays a song or adds it to the queue.",
-        "+pause": "Pauses the currently playing song.",
+        # "+pause": "Pauses the currently playing song.",
         "+resume": "Resumes the paused song.",
         "+skip": "Skips to the next song in the queue.",
-        "+stop": "Stops the music and leaves the channel.",
+        "+stop": "Playback paused. Use +resume to continue.",
         "+queue_list": "Shows the list of queued songs.",
         "+current / +np": "Displays the currently playing song.",
         "+clear": "Clears the song queue.",

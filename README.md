@@ -2,6 +2,8 @@
 
 A feature-rich Discord music bot built with `discord.py` and `yt-dlp` for seamless music playback, queue management, autoplay, and more.
 
+Demo Video Link: `https://tinyurl.com/Demo-Video-TBB`
+
  Category        | Details                                                                                   |
 |-----------------|------------------------------------------------------------------------------------------|
 | **Description** | Advanced music bot with queue management, autoplay, and YouTube integration              |

@@ -22,6 +22,7 @@ current_volume = 0.5
 queue = deque()
 current_song = None
 autoplay_enabled = False
+playback_offset = 0
 
 bot = commands.Bot(command_prefix="+", intents=intents)
 Status = cycle(['Hi there,this is the music bot The Blue Bird', 'Do Listening music for free', 'Have a great time here'])
@@ -78,16 +79,17 @@ async def change_status():
     await bot.change_presence(activity=discord.Game(next(Status)))
 
 async def play_next(ctx):
-    global current_song, autoplay_enabled, current_song_start, current_song_duration, current_volume
+    global current_song, autoplay_enabled, current_song_start, current_song_duration, current_volume, playback_offset
     
     if queue:
         current_song = queue.popleft()
         current_song_start = datetime.now()
+        playback_offset = 0
         current_song_duration = current_song.get('duration')
         
         # Create audio source with volume control
         source = discord.FFmpegPCMAudio(current_song['url'], **ffmpeg_options)
-        audio_source = discord.PCMVolumeTransformer(source, volume=current_volume)  # Wrap with volume control
+        audio_source = discord.PCMVolumeTransformer(source, volume=current_volume)
         
         # Play the audio
         ctx.voice_client.play(
@@ -95,54 +97,72 @@ async def play_next(ctx):
             after=lambda e: asyncio.run_coroutine_threadsafe(play_next(ctx), bot.loop)
         )
         
-        # Send an embed with the now playing information
+        # Send now playing embed
         embed = create_embed("Now Playing 🎶", f"[{current_song['title']}]({current_song['webpage_url']})")
         await ctx.send(embed=embed)
     
-    # If the queue is empty and autoplay is enabled
+    # If queue is empty and autoplay is enabled
     else:
         if autoplay_enabled and current_song:
             try:
-                # Fetch related tracks using YouTube Mix
+                # Attempt to fetch YouTube Mix
                 mix_url = f"https://www.youtube.com/watch?v={current_song['id']}&list=RD{current_song['id']}"
                 info = ytdl.extract_info(mix_url, download=False)
                 
-                # Check if there are entries in the mix
+                # Verify playlist entries exist
                 if not info.get('entries'):
                     raise Exception("No related tracks found in YouTube Mix")
                 
-                # Filter out invalid tracks (shorts, duplicates, etc.)
+                # Filter tracks: skip current song, shorts (<30s), and duplicates
                 valid_tracks = [
-                    t for t in info['entries'][1:]  # Skip the first track (current song)
-                    if t.get('duration', 0) > 30  # Filter out shorts (less than 30 seconds)
-                    and t['id'] != current_song['id']  # Skip the current song
+                    t for t in info['entries'][1:]
+                    if t.get('duration', 0) > 30 and t['id'] != current_song['id']
                 ]
                 
-                # If no valid tracks are found, raise an exception
                 if not valid_tracks:
                     raise Exception("No valid related tracks found")
                 
-                # Add the first 3 valid tracks to the queue
+                # Add up to 3 tracks to queue
                 for track in valid_tracks[:3]:
                     queue.append(track)
                 
-                # Notify the user about the added tracks
                 await ctx.send(embed=create_embed(
                     "Autoplay Added 🎧",
                     f"Added {len(valid_tracks[:3])} related tracks from YouTube Mix"
                 ))
-                
-                # Play the next song
                 await play_next(ctx)
                 return
             
             except Exception as e:
-                # Handle errors gracefully
                 print(f"Autoplay Error: {str(e)}")
-                await ctx.send("❌ Autoplay failed to find related tracks")
-                autoplay_enabled = False  # Disable autoplay on failure
+                # Fallback: search for similar music
+                try:
+                    search_query = f"music similar to {current_song['title']}"
+                    search_info = ytdl.extract_info(f"ytsearch3:{search_query}", download=False)
+                    if 'entries' in search_info:
+                        valid_tracks = [
+                            t for t in search_info['entries']
+                            if t.get('duration', 0) > 30
+                        ]
+                        if valid_tracks:
+                            for track in valid_tracks[:3]:
+                                queue.append(track)
+                            await ctx.send(embed=create_embed(
+                                "Autoplay Added 🎧",
+                                f"Added {len(valid_tracks[:3])} tracks from search"
+                            ))
+                            await play_next(ctx)
+                            return
+                        else:
+                            raise Exception("No valid tracks in search results")
+                    else:
+                        raise Exception("Search returned no results")
+                except Exception as search_e:
+                    print(f"Search Error: {str(search_e)}")
+                    await ctx.send("❌ Autoplay couldn’t find tracks to continue")
+                    autoplay_enabled = False
         
-        # If autoplay is disabled or fails, disconnect from the voice channel
+        # If autoplay fails or is disabled, disconnect
         current_song = None
         if ctx.voice_client:
             await ctx.voice_client.disconnect()
@@ -194,6 +214,60 @@ async def volume(ctx, level: int):
             ctx.voice_client.source.volume = current_volume
     
     await ctx.send(f"🔊 Volume set to **{level}%**")
+# 
+# @bot.command()
+# async def seek(ctx, time_str: str):
+
+#     Seek to a specific time in the currently playing song.
+#     Usage: +seek 30  (for 30 seconds) or !seek 1:30  (for 1 minute 30 seconds)
+    
+#     global playback_offset, current_song_start
+    
+#     # Check if a song is playing
+#     if not current_song or not ctx.voice_client.is_playing():
+#         return await ctx.send("No song is currently playing.")
+    
+#     # Check if the song has a duration (e.g., not a live stream)
+#     if not current_song_duration:
+#         return await ctx.send("Cannot seek in a live stream.")
+    
+#     # Parse the seek time
+#     try:
+#         seek_time = parse_time(time_str)
+#     except ValueError as e:
+#         return await ctx.send(str(e))
+    
+#     # Validate seek time
+#     if seek_time < 0 or seek_time > current_song_duration:
+#         return await ctx.send(f"Seek time must be between 0 and {current_song_duration} seconds.")
+    
+#     # Stop current playback
+#     ctx.voice_client.stop()
+    
+#     # Create new FFmpeg options with seek time
+#     before_options = f'-ss {seek_time} -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
+#     ffmpeg_options_seek = {
+#         'before_options': before_options,
+#         'options': '-vn -b:a 128k'
+#     }
+    
+#     # Create new audio source
+#     source = discord.FFmpegPCMAudio(current_song['url'], **ffmpeg_options_seek)
+#     audio_source = discord.PCMVolumeTransformer(source, volume=current_volume)
+    
+#     # Update playback offset and start time
+#     playback_offset = seek_time
+#     current_song_start = datetime.now()
+    
+#     # Play the new source with the same after callback
+#     ctx.voice_client.play(
+#         audio_source,
+#         after=lambda e: asyncio.run_coroutine_threadsafe(play_next(ctx), bot.loop)
+#     )
+    
+#     await ctx.send(f"⏩ Seeked to {seek_time // 60}:{seek_time % 60:02d}")
+
+# """
 
 
 @bot.command()
@@ -319,6 +393,29 @@ async def current(ctx):
     embed.add_field(name="Remaining", value=remaining_str)
     
     await ctx.send(embed=embed)
+
+    def parse_time(time_str):
+    # """
+    # Convert a time string to seconds.
+    # Accepts integer seconds (e.g., "30") or MM:SS format (e.g., "1:30").
+    # Raises ValueError on invalid input.
+    # """
+        try:
+        # Try parsing as integer seconds
+            return int(time_str)
+        except ValueError:
+        # Try parsing as MM:SS
+            parts = time_str.split(':')
+            if len(parts) == 2:
+                try:
+                    minutes = int(parts[0])
+                    seconds = int(parts[1])
+                    if seconds >= 60:
+                        raise ValueError
+                    return minutes * 60 + seconds
+                except (ValueError, TypeError):
+                    pass
+            raise ValueError("Invalid time format. Use seconds (e.g., '30') or MM:SS (e.g., '1:30').")
 
 
 
